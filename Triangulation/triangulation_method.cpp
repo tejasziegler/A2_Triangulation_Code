@@ -30,6 +30,55 @@
 using namespace easy3d;
 
 
+Matrix34 construct_M(const Matrix33& K, const Matrix33& R, const Vector3D& t) {
+    // Step 1: build [R | t] as a 3x4 matrix
+    Matrix34 Rt(R(0,0), R(0,1), R(0,2), t.x(),
+                R(1,0), R(1,1), R(1,2), t.y(),
+                R(2,0), R(2,1), R(2,2), t.z());
+
+    return K * Rt;
+}
+
+Matrix construct_A(const Vector2D& p0, const Vector2D& p1,
+                   const Matrix34& M0, const Matrix34& M1)
+{
+    Matrix A(4, 4, 0.0);
+
+    double x  = p0.x();
+    double y  = p0.y();
+    double xp = p1.x();
+    double yp = p1.y();
+
+    // get_row returns a 4-element vector for each row of M
+    A.set_row(0, x  * M0.get_row(2) - M0.get_row(0));
+    A.set_row(1, y  * M0.get_row(2) - M0.get_row(1));
+    A.set_row(2, xp * M1.get_row(2) - M1.get_row(0));
+    A.set_row(3, yp * M1.get_row(2) - M1.get_row(1));
+
+    return A;
+}
+
+Vector least_sq_from_A(const Matrix& A) {
+    const int r = A.rows(); // number of coordinate pairs!
+    const int c = 4;
+
+    // Dimensions of matrices in SVD:
+    Matrix U(r, r, 0.0);
+    Matrix S(r, c, 0.0);
+    Matrix V(c, c, 0.0);
+
+    svd_decompose(A, U, S, V);
+
+    // the last column (the solution vector P)
+    // V.cols() - 1 is index 3
+    Vector P = V.get_column(c-1);
+
+    // From LiangLiang's helper notes! Much faster.
+    return P;
+}
+
+
+
 /**
  * TODO: Finish this function for reconstructing 3D geometry from corresponding image points.
  * @return True on success, otherwise false. On success, the reconstructed 3D points must be written to 'points_3d'
@@ -141,6 +190,8 @@ bool Triangulation::triangulation(
 
     // TODO: Reconstruct 3D points. The main task is
     //      - triangulate a pair of image points (i.e., compute the 3D coordinates for each corresponding point pair)
+
+    Matrix34 M = construct_M(R,t);
 
     // TODO: Don't forget to
     //          - write your recovered 3D points into 'points_3d' (so the viewer can visualize the 3D points for you);
