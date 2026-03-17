@@ -263,9 +263,6 @@ bool Triangulation::triangulation(
         std::cout << "  pair " << i << ": " << constraint << std::endl;
     }  // <-- for loop ends HERE
 
-    return points_3d.size() > 0;  // <-- this is outside the loop
-
-
     // 1. Extract R an t from F
     
     // From F to E
@@ -338,3 +335,6 @@ bool Triangulation::triangulation(
         //          - encountered failure in any step.
 
     }
+
+    return points_3d.size() > 0;  // <-- this is outside the loop
+
