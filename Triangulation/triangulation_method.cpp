@@ -265,6 +265,59 @@ bool Triangulation::triangulation(
 
     return points_3d.size() > 0;  // <-- this is outside the loop
 
+
+    // 1. Extract R an t from F
+    
+    // From F to E
+    // 1. Construct the Intrinsic Matrix K'
+    Matrix33 K_1(fx,   s,  cx,
+                 0,  fy,  cy,
+                 0,   0,   1 );
+    // 2. Construct the Intrinsic Matrix K
+    Matrix33 K_0(1,   0,   0,
+                 0,   1,   0,
+                 0,   0,   1 );
+    // 3. Derived and decompose the E
+
+    Matrix33 E = K_1.transpose() * F * K_1;
+
+    int r = E.rows();
+    int c = E.cols();
+
+    // Dimensions of matrices in SVD:
+    Matrix U(r, r, 0.0);
+    Matrix S(r, c, 0.0);
+    Matrix V(c, c, 0.0);
+
+    svd_decompose(E, U, S, V);
+
+    // 4. Extract R and t candidates
+
+    // Step A: Define the Helper Matrix W
+    Matrix33 W(0, -1, 0,
+               1,  0, 0,
+               0,  0, 1);
+
+    // Step B: Extract the 4 Candidates
+    Matrix33 RA = Matrix33(U * W * V.transpose());
+    Matrix33 RB = Matrix33(U * W.transpose() * V.transpose());
+
+    // Ensure RA and RB are valid rotation matrices (determinant must be +1)
+    if (determinant(RA) < 0) {
+        RA = RA * -1.0;
+    }
+    if (determinant(RB) < 0) {
+        RB = RB * -1.0;
+    }
+
+    std::cout << "RA " << RA << std::endl;
+    std::cout << "RB " << RB << std::endl;  
+
+    // Translation options: third column of U
+    Vector3D tA = Vector3D(U.get_column(2)); // get_column is 0-indexed, so 2 is the 3rd column
+    Vector3D tB = -tA;
+    std:: cout << "t " << tA << std::endl;
+    std:: cout << "t " << tB << std::endl;
         // TODO: Estimate relative pose of two views. This can be subdivided into
         //      - estimate the fundamental matrix F;
         //      - compute the essential matrix E;
