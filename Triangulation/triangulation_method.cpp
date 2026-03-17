@@ -234,5 +234,5 @@ bool Triangulation::triangulation(
     //          - function not implemented yet;
     //          - input not valid (e.g., not enough points, point numbers don't match);
     //          - encountered failure in any step.
-    return points_3d.size() > 0;
+    return points_3d.size() > 0; // TRUE if point(s) triangulated!
 }
