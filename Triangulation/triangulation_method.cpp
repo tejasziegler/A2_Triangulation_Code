@@ -285,11 +285,11 @@ bool Triangulation::triangulation(
     int c = E.cols();
 
     // Dimensions of matrices in SVD:
-    Matrix U(r, r, 0.0);
-    Matrix S(r, c, 0.0);
-    Matrix V(c, c, 0.0);
+    Matrix U1(r, r, 0.0);
+    Matrix S1(r, c, 0.0);
+    Matrix V1(c, c, 0.0);
 
-    svd_decompose(E, U, S, V);
+    svd_decompose(E, U1, S1, V1);
 
     // 4. Extract R and t candidates
 
@@ -299,8 +299,8 @@ bool Triangulation::triangulation(
                0,  0, 1);
 
     // Step B: Extract the 4 Candidates
-    Matrix33 RA = Matrix33(U * W * V.transpose());
-    Matrix33 RB = Matrix33(U * W.transpose() * V.transpose());
+    Matrix33 RA = Matrix33(U1 * W * V1.transpose());
+    Matrix33 RB = Matrix33(U1 * W.transpose() * V1.transpose());
 
     // Ensure RA and RB are valid rotation matrices (determinant must be +1)
     if (determinant(RA) < 0) {
