@@ -68,8 +68,7 @@ bool Triangulation::triangulation(
         std::vector<Vector3D> &points_3d,       /// output: reconstructed 3D points
         Matrix33 &R,   /// output: 3 by 3 matrix, which is the recovered rotation of the 2nd camera
         Vector3D &t    /// output: 3D vector, which is the recovered translation of the 2nd camera
-) const
-{
+) const {
     /// NOTE: there might be multiple workflows for reconstructing 3D geometry from corresponding image points.
     ///       This assignment uses the commonly used one explained in our lecture.
     ///       It is advised to define a function for the sub-tasks. This way you have a clean and well-structured
@@ -218,6 +217,9 @@ bool Triangulation::triangulation(
         return false;
     }
 
+
+
+
     // Getting T, T', q, and q' using previously defined helper function
     std::vector<Vector3D> q0, q1;
     Matrix33 T  = normalize_points(points_0, q0);
@@ -249,24 +251,37 @@ bool Triangulation::triangulation(
 
     // De-normalize
     Matrix33 F = transpose(Tprime) * Fq * T;
+    std::cout << "F (final fundamental matrix):\n" << F << std::endl;
 
-    // TODO: Estimate relative pose of two views. This can be subdivided into
-    //      - estimate the fundamental matrix F;
-    //      - compute the essential matrix E;
-    //      - recover rotation R and t.
+    // Sanity check: for a correct F, p'^T * F * p should be near 0 for all point pairs
+    // Sanity check
+    std::cout << "Epipolar constraint check (should be near 0 for all pairs):" << std::endl;
+    for (int i = 0; i < std::min(n, 5); ++i) {
+        Vector3D p  = points_0[i].homogeneous();
+        Vector3D p1 = points_1[i].homogeneous();
+        double constraint = dot(p1, F * p);
+        std::cout << "  pair " << i << ": " << constraint << std::endl;
+    }  // <-- for loop ends HERE
 
-    // TODO: Reconstruct 3D points. The main task is
-    //      - triangulate a pair of image points (i.e., compute the 3D coordinates for each corresponding point pair)
+    return points_3d.size() > 0;  // <-- this is outside the loop
 
-    // TODO: Don't forget to
-    //          - write your recovered 3D points into 'points_3d' (so the viewer can visualize the 3D points for you);
-    //          - write the recovered relative pose into R and t (the view will be updated as seen from the 2nd camera,
-    //            which can help you check if R and t are correct).
-    //       You must return either 'true' or 'false' to indicate whether the triangulation was successful (so the
-    //       viewer will be notified to visualize the 3D points and update the view).
-    //       There are a few cases you should return 'false' instead, for example:
-    //          - function not implemented yet;
-    //          - input not valid (e.g., not enough points, point numbers don't match);
-    //          - encountered failure in any step.
-    return points_3d.size() > 0;
-}
+        // TODO: Estimate relative pose of two views. This can be subdivided into
+        //      - estimate the fundamental matrix F;
+        //      - compute the essential matrix E;
+        //      - recover rotation R and t.
+
+        // TODO: Reconstruct 3D points. The main task is
+        //      - triangulate a pair of image points (i.e., compute the 3D coordinates for each corresponding point pair)
+
+        // TODO: Don't forget to
+        //          - write your recovered 3D points into 'points_3d' (so the viewer can visualize the 3D points for you);
+        //          - write the recovered relative pose into R and t (the view will be updated as seen from the 2nd camera,
+        //            which can help you check if R and t are correct).
+        //       You must return either 'true' or 'false' to indicate whether the triangulation was successful (so the
+        //       viewer will be notified to visualize the 3D points and update the view).
+        //       There are a few cases you should return 'false' instead, for example:
+        //          - function not implemented yet;
+        //          - input not valid (e.g., not enough points, point numbers don't match);
+        //          - encountered failure in any step.
+
+    }
