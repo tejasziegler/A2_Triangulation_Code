@@ -294,13 +294,13 @@ bool Triangulation::triangulation(
     // 4. Extract R and t candidates
 
     // Step A: Define the Helper Matrix W
-    Matrix33 W(0, -1, 0,
+    Matrix33 W1(0, -1, 0,
                1,  0, 0,
                0,  0, 1);
 
     // Step B: Extract the 4 Candidates
-    Matrix33 RA = Matrix33(U1 * W * V1.transpose());
-    Matrix33 RB = Matrix33(U1 * W.transpose() * V1.transpose());
+    Matrix33 RA = Matrix33(U1 * W1 * V1.transpose());
+    Matrix33 RB = Matrix33(U1 * W1.transpose() * V1.transpose());
 
     // Ensure RA and RB are valid rotation matrices (determinant must be +1)
     if (determinant(RA) < 0) {
