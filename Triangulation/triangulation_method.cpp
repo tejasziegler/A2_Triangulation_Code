@@ -39,8 +39,7 @@ Matrix34 construct_M(const Matrix33& K, const Matrix33& R, const Vector3D& t) {
     return K * Rt;
 }
 
-Matrix construct_A(const Vector2D& p0, const Vector2D& p1,
-                   const Matrix34& M0, const Matrix34& M1)
+Matrix construct_A(const Vector2D& p0, const Vector2D& p1, const Matrix34& M0, const Matrix34& M1)
 {
     Matrix A(4, 4, 0.0);
 
@@ -191,7 +190,39 @@ bool Triangulation::triangulation(
     // TODO: Reconstruct 3D points. The main task is
     //      - triangulate a pair of image points (i.e., compute the 3D coordinates for each corresponding point pair)
 
-    Matrix34 M = construct_M(R,t);
+    Matrix33 K(fx, s,  cx,
+                0, fy, cy,
+                0, 0,  1);
+
+    // camera 0
+    Matrix33 R0 = Matrix::identity(3, 3, 1.0);
+    Vector3D t0(0, 0, 0);
+    Matrix34 M0 = construct_M(K, R0, t0);
+
+    // camera 1
+    Matrix34 M1 = construct_M(K, R, t);
+
+    int n = points_0.size();
+
+    // Triangulation:
+    for (int i = 0; i < n; i++) {
+
+        // Build 4x4 A matrix for point pair i
+        Matrix A = construct_A(points_0[i], points_1[i], M0, M1);
+
+        // Solve via SVD: returns a 4-vector (X, Y, Z, W) in homogeneous coords
+        Vector P_homo = least_sq_from_A(A);
+
+        // Convert homogeneous 4-vector to 3D Cartesian point
+        // P_homo = (X, Y, Z, W) => P_cart = (X/W, Y/W, Z/W)
+        Vector3D point_3d(P_homo[0] / P_homo[3],
+                          P_homo[1] / P_homo[3],
+                          P_homo[2] / P_homo[3]);
+
+        points_3d.push_back(point_3d);
+    }
+
+
 
     // TODO: Don't forget to
     //          - write your recovered 3D points into 'points_3d' (so the viewer can visualize the 3D points for you);
