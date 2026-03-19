@@ -100,6 +100,26 @@ Vector least_sq_from_A(const Matrix& A) {
     return P;
 }
 
+std::vector<Vector3D> triangulate(const std::vector<Vector2D>& points_0,
+                                   const std::vector<Vector2D>& points_1,
+                                   const Matrix34& M0,
+                                   const Matrix34& M1)
+{
+    std::vector<Vector3D> points;
+
+    for (int i = 0; i < (int)points_0.size(); i++) {
+        Matrix A = construct_A(points_0[i], points_1[i], M0, M1);
+        Vector P_homo = least_sq_from_A(A);
+        Vector3D point_3d(P_homo[0] / P_homo[3],
+                          P_homo[1] / P_homo[3],
+                          P_homo[2] / P_homo[3]);
+        points.push_back(point_3d);
+    }
+
+    return points;
+}
+
+
 
 /**
  * TODO: Finish this function for reconstructing 3D geometry from corresponding image points.
@@ -264,13 +284,17 @@ bool Triangulation::triangulation(
         return false;
     }
 
-
+    std::cout << "\n[1/6] Input validation passed. n=" << points_0.size() << " point pairs.\n";
 
 
     // Getting T, T', q, and q' using previously defined helper function
     std::vector<Vector3D> q0, q1;
     Matrix33 T  = normalize_points(points_0, q0);
     Matrix33 Tprime = normalize_points(points_1, q1);
+
+    std::cout << "[2/6] Points normalized.\n";
+    std::cout << "      T:\n"  << T      << "\n";
+    std::cout << "      T':\n" << Tprime << "\n";
 
     // Build W
     int n = q0.size();
@@ -298,7 +322,8 @@ bool Triangulation::triangulation(
 
     // De-normalize
     Matrix33 F = transpose(Tprime) * Fq * T;
-    std::cout << "F (final fundamental matrix):\n" << F << std::endl;
+    std::cout << "[3/6]F (final fundamental matrix):\n" << F << std::endl;
+
 
     // Sanity check: for a correct F, p'^T * F * p should be near 0 for all point pairs
     // Sanity check
@@ -318,12 +343,14 @@ bool Triangulation::triangulation(
                  0,  fy,  cy,
                  0,   0,   1 );
     // 2. Construct the Intrinsic Matrix K
-    Matrix33 K_0(1,   0,   0,
-                 0,   1,   0,
+    Matrix33 K_0(fx,   s,  cx,
+                 0,  fy,  cy,
                  0,   0,   1 );
     // 3. Derived and decompose the E
 
-    Matrix33 E = K_1.transpose() * F * K_1;
+    Matrix33 E = K_0.transpose() * F * K_0;
+
+
 
     int r = E.rows();
     int c = E.cols();
@@ -363,42 +390,64 @@ bool Triangulation::triangulation(
     std:: cout << "t " << tA << std::endl;
     std:: cout << "t " << tB << std::endl;
 
+    std::cout << "[4/6] Essential matrix E and R/t candidates extracted.\n";
+    std::cout << "      E:\n"  << E  << "\n";
+    std::cout << "      RA:\n" << RA << "      RB:\n" << RB;
+    std::cout << "      tA: [" << tA << "]\n";
+    std::cout << "      tB: [" << tB << "]\n";
 
 
-
-
-
-    Matrix33 K(fx, s,  cx,
-                0, fy, cy,
-                0, 0,  1);
-
-    // camera 0
+    // camera 0 — fixed reference
     Matrix33 R0 = Matrix::identity(3, 3, 1.0);
     Vector3D t0(0, 0, 0);
-    Matrix34 M0 = construct_M(K, R0, t0);
+    Matrix34 M0 = construct_M(K_0, R0, t0);
 
-    // camera 1
-    Matrix34 M1 = construct_M(K, R, t);
+    // 4 candidate combinations
+    std::vector<Matrix33> R_candidates = {RA, RB, RA, RB};
+    std::vector<Vector3D> t_candidates = {tA, tA, tB, tB};
 
-    int n1 = points_0.size();
+    // store the 4 resulting point sets
+    std::vector<std::vector<Vector3D>> all_points_3d(4);
 
-    // Triangulation:
-    for (int i = 0; i < n1; i++) {
-
-        // Build 4x4 A matrix for point pair i
-        Matrix A = construct_A(points_0[i], points_1[i], M0, M1);
-
-        // Solve via SVD: returns a 4-vector (X, Y, Z, W) in homogeneous coords
-        Vector P_homo = least_sq_from_A(A);
-
-        // Convert homogeneous 4-vector to 3D Cartesian point
-        // P_homo = (X, Y, Z, W) => P_cart = (X/W, Y/W, Z/W)
-        Vector3D point_3d(P_homo[0] / P_homo[3],
-                          P_homo[1] / P_homo[3],
-                          P_homo[2] / P_homo[3]);
-
-        points_3d.push_back(point_3d);
+    for (int i = 0; i < 4; i++) {
+        Matrix34 M1 = construct_M(K_1, R_candidates[i], t_candidates[i]);
+        all_points_3d[i] = triangulate(points_0, points_1, M0, M1);
+        std::cout << "[5/6] Candidate " << i << ": triangulated "
+              << all_points_3d[i].size() << " points.\n";
     }
+
+    // pick the set with the most points with positive z
+    int best = 0;
+    int best_count = 0;
+    for (int i = 0; i < 4; i++) {
+        int count = 0;
+        for (const auto& p : all_points_3d[i]) {
+            // depth in camera 0: just z (since R0=I, t0=0 in this case)
+            Vector3D p_cam0 = R0 * p + t0;
+            bool in_front_of_cam0 = p_cam0.z() > 0;
+
+            // depth in camera 1: transform point into camera 1 space first
+            Vector3D p_cam1 = R_candidates[i] * p + t_candidates[i];
+            bool in_front_of_cam1 = p_cam1.z() > 0;
+
+            if (in_front_of_cam0 && in_front_of_cam1) count++;
+        }
+        std::cout << "      Candidate " << i << ": " << count
+              << " / " << all_points_3d[i].size() << " points in front of both cameras.\n";
+        if (count > best_count) { best_count = count; best = i; }
+    }
+
+    // write out the best solution
+    R = R_candidates[best];
+    t = t_candidates[best];
+    points_3d = all_points_3d[best];
+
+    std::cout << "[6/6] Best candidate: " << best
+          << " with " << best_count << " valid points.\n";
+    std::cout << "      R:\n" << R << "\n";
+    std::cout << "      t: [" << t << "]\n";
+    std::cout << "      Total points_3d written: " << points_3d.size() << "\n";
+
 
         // TODO: Estimate relative pose of two views. This can be subdivided into
         //      - estimate the fundamental matrix F;
