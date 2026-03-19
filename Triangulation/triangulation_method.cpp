@@ -29,6 +29,97 @@
 
 using namespace easy3d;
 
+Matrix33 normalize_points(const std::vector<Vector2D>& pts, std::vector<Vector3D>& normalized) {
+    int n = pts.size();
+
+    double mean_x = 0, mean_y = 0;
+    for (auto& p : pts) { mean_x += p[0]; mean_y += p[1]; }
+    mean_x /= n;
+    mean_y /= n;
+
+    double mean_dist = 0;
+    for (auto& p : pts)
+        mean_dist += std::sqrt(std::pow(p[0] - mean_x, 2) + std::pow(p[1] - mean_y, 2));
+    mean_dist /= n;
+
+    double scale = std::sqrt(2.0) / mean_dist;
+    Matrix33 T(scale, 0,     -scale * mean_x,
+               0,     scale, -scale * mean_y,
+               0,     0,      1);
+
+    normalized.resize(n);
+    for (int i = 0; i < n; ++i)
+        normalized[i] = T * pts[i].homogeneous();
+
+    return T;
+}
+
+Matrix34 construct_M(const Matrix33& K, const Matrix33& R, const Vector3D& t) {
+    // Step 1: build [R | t] as a 3x4 matrix
+    Matrix34 Rt(R(0,0), R(0,1), R(0,2), t.x(),
+                R(1,0), R(1,1), R(1,2), t.y(),
+                R(2,0), R(2,1), R(2,2), t.z());
+
+    return K * Rt;
+}
+
+Matrix construct_A(const Vector2D& p0, const Vector2D& p1, const Matrix34& M0, const Matrix34& M1)
+{
+    Matrix A(4, 4, 0.0);
+
+    double x  = p0.x();
+    double y  = p0.y();
+    double xp = p1.x();
+    double yp = p1.y();
+
+    // get_row returns a 4-element vector for each row of M
+    A.set_row(0, x  * M0.get_row(2) - M0.get_row(0));
+    A.set_row(1, y  * M0.get_row(2) - M0.get_row(1));
+    A.set_row(2, xp * M1.get_row(2) - M1.get_row(0));
+    A.set_row(3, yp * M1.get_row(2) - M1.get_row(1));
+
+    return A;
+}
+
+Vector least_sq_from_A(const Matrix& A) {
+    const int r = A.rows(); // number of coordinate pairs!
+    const int c = 4;
+
+    // Dimensions of matrices in SVD:
+    Matrix U(r, r, 0.0);
+    Matrix S(r, c, 0.0);
+    Matrix V(c, c, 0.0);
+
+    svd_decompose(A, U, S, V);
+
+    // the last column (the solution vector P)
+    // V.cols() - 1 is index 3
+    Vector P = V.get_column(c-1);
+
+    // From LiangLiang's helper notes! Much faster.
+    return P;
+}
+
+std::vector<Vector3D> triangulate(const std::vector<Vector2D>& points_0,
+                                   const std::vector<Vector2D>& points_1,
+                                   const Matrix34& M0,
+                                   const Matrix34& M1)
+{
+    std::vector<Vector3D> points;
+
+    for (int i = 0; i < (int)points_0.size(); i++) {
+        Matrix A = construct_A(points_0[i], points_1[i], M0, M1);
+        Vector P_homo = least_sq_from_A(A);
+        Vector3D point_3d(P_homo[0] / P_homo[3],
+                          P_homo[1] / P_homo[3],
+                          P_homo[2] / P_homo[3]);
+        points.push_back(point_3d);
+    }
+
+    return points;
+}
+
+
 
 /**
  * TODO: Finish this function for reconstructing 3D geometry from corresponding image points.
@@ -44,8 +135,7 @@ bool Triangulation::triangulation(
         std::vector<Vector3D> &points_3d,       /// output: reconstructed 3D points
         Matrix33 &R,   /// output: 3 by 3 matrix, which is the recovered rotation of the 2nd camera
         Vector3D &t    /// output: 3D vector, which is the recovered translation of the 2nd camera
-) const
-{
+) const {
     /// NOTE: there might be multiple workflows for reconstructing 3D geometry from corresponding image points.
     ///       This assignment uses the commonly used one explained in our lecture.
     ///       It is advised to define a function for the sub-tasks. This way you have a clean and well-structured
@@ -69,63 +159,63 @@ bool Triangulation::triangulation(
                  "\t    - remove ALL unrelated test code, debugging code, and comments.\n"
                  "\t    - ensure that your code compiles and can reproduce your results WITHOUT ANY modification.\n\n" << std::flush;
 
-    /// Below are a few examples showing some useful data structures and APIs.
-
-    /// define a 2D vector/point
-    Vector2D b(1.1, 2.2);
-
-    /// define a 3D vector/point
-    Vector3D a(1.1, 2.2, 3.3);
-
-    /// get the Cartesian coordinates of a (a is treated as Homogeneous coordinates)
-    Vector2D p = a.cartesian();
-
-    /// get the Homogeneous coordinates of p
-    Vector3D q = p.homogeneous();
-
-    /// define a 3 by 3 matrix (and all elements initialized to 0.0)
-    Matrix33 A;
-
-    /// define and initialize a 3 by 3 matrix
-    Matrix33 T(1.1, 2.2, 3.3,
-               0, 2.2, 3.3,
-               0, 0, 1);
-
-    /// define and initialize a 3 by 4 matrix
-    Matrix34 M(1.1, 2.2, 3.3, 0,
-               0, 2.2, 3.3, 1,
-               0, 0, 1, 1);
-
-    /// set first row by a vector
-    M.set_row(0, Vector4D(1.1, 2.2, 3.3, 4.4));
-
-    /// set second column by a vector
-    M.set_column(1, Vector3D(5.5, 5.5, 5.5));
-
-    /// define a 15 by 9 matrix (and all elements initialized to 0.0)
-    Matrix W(15, 9, 0.0);
-    /// set the first row by a 9-dimensional vector
-    W.set_row(0, {0, 1, 2, 3, 4, 5, 6, 7, 8}); // {....} is equivalent to a std::vector<double>
-
-    /// get the number of rows.
-    int num_rows = W.rows();
-
-    /// get the number of columns.
-    int num_cols = W.cols();
-
-    /// get the the element at row 1 and column 2
-    double value = W(1, 2);
-
-    /// get the last column of a matrix
-    Vector last_column = W.get_column(W.cols() - 1);
-
-    /// define a 3 by 3 identity matrix
-    Matrix33 I = Matrix::identity(3, 3, 1.0);
-
-    /// matrix-vector product
-    Vector3D v = M * Vector4D(1, 2, 3, 4); // M is 3 by 4
-
-    ///For more functions of Matrix and Vector, please refer to 'matrix.h' and 'vector.h'
+    // /// Below are a few examples showing some useful data structures and APIs.
+    //
+    // /// define a 2D vector/point
+    // Vector2D b(1.1, 2.2);
+    //
+    // /// define a 3D vector/point
+    // Vector3D a(1.1, 2.2, 3.3);
+    //
+    // /// get the Cartesian coordinates of a (a is treated as Homogeneous coordinates)
+    // Vector2D p = a.cartesian();
+    //
+    // /// get the Homogeneous coordinates of p
+    // Vector3D q = p.homogeneous();
+    //
+    // /// define a 3 by 3 matrix (and all elements initialized to 0.0)
+    // Matrix33 A;
+    //
+    // /// define and initialize a 3 by 3 matrix
+    // Matrix33 T(1.1, 2.2, 3.3,
+    //            0, 2.2, 3.3,
+    //            0, 0, 1);
+    //
+    // /// define and initialize a 3 by 4 matrix
+    // Matrix34 M(1.1, 2.2, 3.3, 0,
+    //            0, 2.2, 3.3, 1,
+    //            0, 0, 1, 1);
+    //
+    // /// set first row by a vector
+    // M.set_row(0, Vector4D(1.1, 2.2, 3.3, 4.4));
+    //
+    // /// set second column by a vector
+    // M.set_column(1, Vector3D(5.5, 5.5, 5.5));
+    //
+    // /// define a 15 by 9 matrix (and all elements initialized to 0.0)
+    // Matrix W(15, 9, 0.0);
+    // /// set the first row by a 9-dimensional vector
+    // W.set_row(0, {0, 1, 2, 3, 4, 5, 6, 7, 8}); // {....} is equivalent to a std::vector<double>
+    //
+    // /// get the number of rows.
+    // int num_rows = W.rows();
+    //
+    // /// get the number of columns.
+    // int num_cols = W.cols();
+    //
+    // /// get the the element at row 1 and column 2
+    // double value = W(1, 2);
+    //
+    // /// get the last column of a matrix
+    // Vector last_column = W.get_column(W.cols() - 1);
+    //
+    // /// define a 3 by 3 identity matrix
+    // Matrix33 I = Matrix::identity(3, 3, 1.0);
+    //
+    // /// matrix-vector product
+    // Vector3D v = M * Vector4D(1, 2, 3, 4); // M is 3 by 4
+    //
+    // ///For more functions of Matrix and Vector, please refer to 'matrix.h' and 'vector.h'
 
     // TODO: delete all above example code in your final submission
 
@@ -134,23 +224,251 @@ bool Triangulation::triangulation(
 
     // TODO: check if the input is valid (always good because you never known how others will call your function).
 
-    // TODO: Estimate relative pose of two views. This can be subdivided into
-    //      - estimate the fundamental matrix F;
-    //      - compute the essential matrix E;
-    //      - recover rotation R and t.
+    // 1. Enough point pairs (8-point algorithm requires at least 8)
+    const int MIN_POINTS = 8;
+    if (points_0.size() < MIN_POINTS || points_1.size() < MIN_POINTS) {
+        std::cerr << "[Error] Not enough point pairs: got " << points_0.size()
+                  << " (image 0) and " << points_1.size()
+                  << " (image 1), but at least " << MIN_POINTS << " are required." << std::endl;
+        return false;
+    }
 
-    // TODO: Reconstruct 3D points. The main task is
-    //      - triangulate a pair of image points (i.e., compute the 3D coordinates for each corresponding point pair)
+    // 2. Equal number of points in both images
+    if (points_0.size() != points_1.size()) {
+        std::cerr << "[Error] Point count mismatch: image 0 has " << points_0.size()
+                  << " points, image 1 has " << points_1.size() << " points." << std::endl;
+        return false;
+    }
 
-    // TODO: Don't forget to
-    //          - write your recovered 3D points into 'points_3d' (so the viewer can visualize the 3D points for you);
-    //          - write the recovered relative pose into R and t (the view will be updated as seen from the 2nd camera,
-    //            which can help you check if R and t are correct).
-    //       You must return either 'true' or 'false' to indicate whether the triangulation was successful (so the
-    //       viewer will be notified to visualize the 3D points and update the view).
-    //       There are a few cases you should return 'false' instead, for example:
-    //          - function not implemented yet;
-    //          - input not valid (e.g., not enough points, point numbers don't match);
-    //          - encountered failure in any step.
+    // All 2D point coordinates must be finite real numbers
+    //        Vector2D inherits operator[] from Vector, giving access to x (index 0) and y (index 1).
+    for (std::size_t i = 0; i < points_0.size(); ++i) {
+        if (!std::isfinite(points_0[i][0]) || !std::isfinite(points_0[i][1])) {
+            std::cerr << "[Error] Non-finite coordinate in image 0 at index " << i
+                      << ": (" << points_0[i][0] << ", " << points_0[i][1] << ")" << std::endl;
+            return false;
+        }
+        if (!std::isfinite(points_1[i][0]) || !std::isfinite(points_1[i][1])) {
+            std::cerr << "[Error] Non-finite coordinate in image 1 at index " << i
+                      << ": (" << points_1[i][0] << ", " << points_1[i][1] << ")" << std::endl;
+            return false;
+        }
+    }
+
+    // Camera intrinsic parameters must be valid -----------------------
+    //        Focal lengths must be strictly positive finite values.
+    //        Principal point and skew must be finite (any real value is geometrically valid).
+    if (!std::isfinite(fx) || fx <= 0.0) {
+        std::cerr << "[Error] Invalid focal length fx = " << fx
+                  << ". Must be a positive finite number." << std::endl;
+        return false;
+    }
+    if (!std::isfinite(fy) || fy <= 0.0) {
+        std::cerr << "[Error] Invalid focal length fy = " << fy
+                  << ". Must be a positive finite number." << std::endl;
+        return false;
+    }
+    if (!std::isfinite(cx)) {
+        std::cerr << "[Error] Invalid principal point cx = " << cx
+                  << ". Must be a finite number." << std::endl;
+        return false;
+    }
+    if (!std::isfinite(cy)) {
+        std::cerr << "[Error] Invalid principal point cy = " << cy
+                  << ". Must be a finite number." << std::endl;
+        return false;
+    }
+    if (!std::isfinite(s)) {
+        std::cerr << "[Error] Invalid skew factor s = " << s
+                  << ". Must be a finite number." << std::endl;
+        return false;
+    }
+
+    std::cout << "\n[1/6] Input validation passed. n=" << points_0.size() << " point pairs.\n";
+
+
+    // Getting T, T', q, and q' using previously defined helper function
+    std::vector<Vector3D> q0, q1;
+    Matrix33 T  = normalize_points(points_0, q0);
+    Matrix33 Tprime = normalize_points(points_1, q1);
+
+    std::cout << "[2/6] Points normalized.\n";
+    std::cout << "      T:\n"  << T      << "\n";
+    std::cout << "      T':\n" << Tprime << "\n";
+
+    // Build W
+    int n = q0.size();
+    Matrix W(n, 9, 0.0);
+    for (int i = 0; i < n; ++i) {
+        double u  = q0[i][0],  v  = q0[i][1];
+        double u1 = q1[i][0],  v1 = q1[i][1];
+        W.set_row(i, {u*u1, v*u1, u1, u*v1, v*v1, v1, u, v, 1.0});
+    }
+
+    // Solve Wf = 0 with SVD
+    Matrix U(n, n, 0.0), S(n, 9, 0.0), V(9, 9, 0.0);
+    svd_decompose(W, U, S, V);
+    Vector f = V.get_column(V.cols() - 1);
+    Matrix33 Fq(f[0], f[1], f[2],
+                f[3], f[4], f[5],
+                f[6], f[7], f[8]);
+
+    // Enforce rank-2
+    Matrix33 U2, V2;
+    Matrix S2(3, 3, 0.0);
+    svd_decompose(Fq, U2, S2, V2);
+    S2(2, 2) = 0.0;
+    Fq = U2 * S2 * transpose(V2);
+
+    // De-normalize
+    Matrix33 F = transpose(Tprime) * Fq * T;
+    std::cout << "[3/6]F (final fundamental matrix):\n" << F << std::endl;
+
+
+    // Sanity check: for a correct F, p'^T * F * p should be near 0 for all point pairs
+    // Sanity check
+    std::cout << "Epipolar constraint check (should be near 0 for all pairs):" << std::endl;
+    for (int i = 0; i < std::min(n, 5); ++i) {
+        Vector3D p  = points_0[i].homogeneous();
+        Vector3D p1 = points_1[i].homogeneous();
+        double constraint = dot(p1, F * p);
+        std::cout << "  pair " << i << ": " << constraint << std::endl;
+    }  // <-- for loop ends HERE
+
+    // 1. Extract R an t from F
+    
+    // From F to E
+    // 1. Construct the Intrinsic Matrix K'
+    Matrix33 K_1(fx,   s,  cx,
+                 0,  fy,  cy,
+                 0,   0,   1 );
+    // 2. Construct the Intrinsic Matrix K
+    Matrix33 K_0(fx,   s,  cx,
+                 0,  fy,  cy,
+                 0,   0,   1 );
+    // 3. Derived and decompose the E
+
+    Matrix33 E = K_0.transpose() * F * K_0;
+
+
+
+    int r = E.rows();
+    int c = E.cols();
+
+    // Dimensions of matrices in SVD:
+    Matrix U1(r, r, 0.0);
+    Matrix S1(r, c, 0.0);
+    Matrix V1(c, c, 0.0);
+
+    svd_decompose(E, U1, S1, V1);
+
+    // 4. Extract R and t candidates
+
+    // Step A: Define the Helper Matrix W
+    Matrix33 W1(0, -1, 0,
+               1,  0, 0,
+               0,  0, 1);
+
+    // Step B: Extract the 4 Candidates
+    Matrix33 RA = Matrix33(U1 * W1 * V1.transpose());
+    Matrix33 RB = Matrix33(U1 * W1.transpose() * V1.transpose());
+
+    // Ensure RA and RB are valid rotation matrices (determinant must be +1)
+    if (determinant(RA) < 0) {
+        RA = RA * -1.0;
+    }
+    if (determinant(RB) < 0) {
+        RB = RB * -1.0;
+    }
+
+    std::cout << "RA " << RA << std::endl;
+    std::cout << "RB " << RB << std::endl;  
+
+    // Translation options: third column of U
+    Vector3D tA = Vector3D(U1.get_column(2)); // get_column is 0-indexed, so 2 is the 3rd column
+    Vector3D tB = -tA;
+    std:: cout << "t " << tA << std::endl;
+    std:: cout << "t " << tB << std::endl;
+
+    std::cout << "[4/6] Essential matrix E and R/t candidates extracted.\n";
+    std::cout << "      E:\n"  << E  << "\n";
+    std::cout << "      RA:\n" << RA << "      RB:\n" << RB;
+    std::cout << "      tA: [" << tA << "]\n";
+    std::cout << "      tB: [" << tB << "]\n";
+
+
+    // camera 0 — fixed reference
+    Matrix33 R0 = Matrix::identity(3, 3, 1.0);
+    Vector3D t0(0, 0, 0);
+    Matrix34 M0 = construct_M(K_0, R0, t0);
+
+    // 4 candidate combinations
+    std::vector<Matrix33> R_candidates = {RA, RB, RA, RB};
+    std::vector<Vector3D> t_candidates = {tA, tA, tB, tB};
+
+    // store the 4 resulting point sets
+    std::vector<std::vector<Vector3D>> all_points_3d(4);
+
+    for (int i = 0; i < 4; i++) {
+        Matrix34 M1 = construct_M(K_1, R_candidates[i], t_candidates[i]);
+        all_points_3d[i] = triangulate(points_0, points_1, M0, M1);
+        std::cout << "[5/6] Candidate " << i << ": triangulated "
+              << all_points_3d[i].size() << " points.\n";
+    }
+
+    // pick the set with the most points with positive z
+    int best = 0;
+    int best_count = 0;
+    for (int i = 0; i < 4; i++) {
+        int count = 0;
+        for (const auto& p : all_points_3d[i]) {
+            // depth in camera 0: just z (since R0=I, t0=0 in this case)
+            Vector3D p_cam0 = R0 * p + t0;
+            bool in_front_of_cam0 = p_cam0.z() > 0;
+
+            // depth in camera 1: transform point into camera 1 space first
+            Vector3D p_cam1 = R_candidates[i] * p + t_candidates[i];
+            bool in_front_of_cam1 = p_cam1.z() > 0;
+
+            if (in_front_of_cam0 && in_front_of_cam1) count++;
+        }
+        std::cout << "      Candidate " << i << ": " << count
+              << " / " << all_points_3d[i].size() << " points in front of both cameras.\n";
+        if (count > best_count) { best_count = count; best = i; }
+    }
+
+    // write out the best solution
+    R = R_candidates[best];
+    t = t_candidates[best];
+    points_3d = all_points_3d[best];
+
+    std::cout << "[6/6] Best candidate: " << best
+          << " with " << best_count << " valid points.\n";
+    std::cout << "      R:\n" << R << "\n";
+    std::cout << "      t: [" << t << "]\n";
+    std::cout << "      Total points_3d written: " << points_3d.size() << "\n";
+
+
+        // TODO: Estimate relative pose of two views. This can be subdivided into
+        //      - estimate the fundamental matrix F;
+        //      - compute the essential matrix E;
+        //      - recover rotation R and t.
+
+        // TODO: Reconstruct 3D points. The main task is
+        //      - triangulate a pair of image points (i.e., compute the 3D coordinates for each corresponding point pair)
+
+        // TODO: Don't forget to
+        //          - write your recovered 3D points into 'points_3d' (so the viewer can visualize the 3D points for you);
+        //          - write the recovered relative pose into R and t (the view will be updated as seen from the 2nd camera,
+        //            which can help you check if R and t are correct).
+        //       You must return either 'true' or 'false' to indicate whether the triangulation was successful (so the
+        //       viewer will be notified to visualize the 3D points and update the view).
+        //       There are a few cases you should return 'false' instead, for example:
+        //          - function not implemented yet;
+        //          - input not valid (e.g., not enough points, point numbers don't match);
+        //          - encountered failure in any step.
     return points_3d.size() > 0;
-}
+    }
+
+
+
