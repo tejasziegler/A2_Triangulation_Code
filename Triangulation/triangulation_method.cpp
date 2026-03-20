@@ -183,14 +183,14 @@ bool Triangulation::triangulation(
     if (points_0.size() < MIN_POINTS || points_1.size() < MIN_POINTS) {
         std::cerr << "[Error] Not enough point pairs: got " << points_0.size()
                   << " (image 0) and " << points_1.size()
-                  << " (image 1), but at least " << MIN_POINTS << " are required." << std::endl;
+                  << " (image 1), but at least " << MIN_POINTS << " are required." << std::flush;
         return false;
     }
 
     // 2. Equal number of points in both images
     if (points_0.size() != points_1.size()) {
         std::cerr << "[Error] Point count mismatch: image 0 has " << points_0.size()
-                  << " points, image 1 has " << points_1.size() << " points." << std::endl;
+                  << " points, image 1 has " << points_1.size() << " points." << std::flush;
         return false;
     }
 
@@ -199,12 +199,12 @@ bool Triangulation::triangulation(
     for (std::size_t i = 0; i < points_0.size(); ++i) {
         if (!std::isfinite(points_0[i][0]) || !std::isfinite(points_0[i][1])) {
             std::cerr << "[Error] Non-finite coordinate in image 0 at index " << i
-                      << ": (" << points_0[i][0] << ", " << points_0[i][1] << ")" << std::endl;
+                      << ": (" << points_0[i][0] << ", " << points_0[i][1] << ")" << std::flush;
             return false;
         }
         if (!std::isfinite(points_1[i][0]) || !std::isfinite(points_1[i][1])) {
             std::cerr << "[Error] Non-finite coordinate in image 1 at index " << i
-                      << ": (" << points_1[i][0] << ", " << points_1[i][1] << ")" << std::endl;
+                      << ": (" << points_1[i][0] << ", " << points_1[i][1] << ")" << std::flush;
             return false;
         }
     }
@@ -214,27 +214,27 @@ bool Triangulation::triangulation(
     //        Principal point and skew must be finite (any real value is geometrically valid).
     if (!std::isfinite(fx) || fx <= 0.0) {
         std::cerr << "[Error] Invalid focal length fx = " << fx
-                  << ". Must be a positive finite number." << std::endl;
+                  << ". Must be a positive finite number." << std::flush;
         return false;
     }
     if (!std::isfinite(fy) || fy <= 0.0) {
         std::cerr << "[Error] Invalid focal length fy = " << fy
-                  << ". Must be a positive finite number." << std::endl;
+                  << ". Must be a positive finite number." << std::flush;
         return false;
     }
     if (!std::isfinite(cx)) {
         std::cerr << "[Error] Invalid principal point cx = " << cx
-                  << ". Must be a finite number." << std::endl;
+                  << ". Must be a finite number." << std::flush;
         return false;
     }
     if (!std::isfinite(cy)) {
         std::cerr << "[Error] Invalid principal point cy = " << cy
-                  << ". Must be a finite number." << std::endl;
+                  << ". Must be a finite number." << std::flush;
         return false;
     }
     if (!std::isfinite(s)) {
         std::cerr << "[Error] Invalid skew factor s = " << s
-                  << ". Must be a finite number." << std::endl;
+                  << ". Must be a finite number." << std::flush;
         return false;
     }
 
@@ -277,22 +277,9 @@ bool Triangulation::triangulation(
     Matrix33 F = transpose(Tprime) * Fq * T;
     std::cout << "[3/6] Computed fundamental matrix F" << std::endl;
 
-    // Sanity check: for a correct F, p'^T * F * p should be near 0 for all point pairs
-    // Sanity check
-    std::cout << "Epipolar constraint check (should be near 0 for all pairs):" << std::endl;
-
-        for (int i = 0; i < std::min(n, 5); ++i) {
-            Vector3D p  = points_0[i].homogeneous();
-            Vector3D p1 = points_1[i].homogeneous();
-            double constraint = dot(p1, F * p);
-            std::cout << "  pair " << i << ": " << constraint << std::endl;
-        }
-
     // --------------------- FIND R AND t FROM F -------------------------------------------------------
 
 
-
-    
     // From F to E
     // 1. Construct the Intrinsic Matrix K'
     Matrix33 K_1(fx,   s,  cx,
