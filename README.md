@@ -2,6 +2,6 @@
 
 Group members<br>
 
-Emil Holub - 6550940
-Jaime Vergara - 6462421
-Tejas Ziegler - 6575498 
+Emil Holub - 6550940 <br>
+Jaime Vergara - 6462421 <br>
+Tejas Ziegler - 6575498 <br>
