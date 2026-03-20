@@ -194,52 +194,6 @@ bool Triangulation::triangulation(
         return false;
     }
 
-    // All 2D point coordinates must be finite real numbers
-    //        Vector2D inherits operator[] from Vector, giving access to x (index 0) and y (index 1).
-    for (std::size_t i = 0; i < points_0.size(); ++i) {
-        if (!std::isfinite(points_0[i][0]) || !std::isfinite(points_0[i][1])) {
-            std::cerr << "[Error] Non-finite coordinate in image 0 at index " << i
-                      << ": (" << points_0[i][0] << ", " << points_0[i][1] << ")" << std::flush;
-            return false;
-        }
-        if (!std::isfinite(points_1[i][0]) || !std::isfinite(points_1[i][1])) {
-            std::cerr << "[Error] Non-finite coordinate in image 1 at index " << i
-                      << ": (" << points_1[i][0] << ", " << points_1[i][1] << ")" << std::flush;
-            return false;
-        }
-    }
-
-    // Camera intrinsic parameters must be valid -----------------------
-    //        Focal lengths must be strictly positive finite values.
-    //        Principal point and skew must be finite (any real value is geometrically valid).
-    if (!std::isfinite(fx) || fx <= 0.0) {
-        std::cerr << "[Error] Invalid focal length fx = " << fx
-                  << ". Must be a positive finite number." << std::flush;
-        return false;
-    }
-    if (!std::isfinite(fy) || fy <= 0.0) {
-        std::cerr << "[Error] Invalid focal length fy = " << fy
-                  << ". Must be a positive finite number." << std::flush;
-        return false;
-    }
-    if (!std::isfinite(cx)) {
-        std::cerr << "[Error] Invalid principal point cx = " << cx
-                  << ". Must be a finite number." << std::flush;
-        return false;
-    }
-    if (!std::isfinite(cy)) {
-        std::cerr << "[Error] Invalid principal point cy = " << cy
-                  << ". Must be a finite number." << std::flush;
-        return false;
-    }
-    if (!std::isfinite(s)) {
-        std::cerr << "[Error] Invalid skew factor s = " << s
-                  << ". Must be a finite number." << std::flush;
-        return false;
-    }
-
-    std::cout << "\n[1/6] Input validation passed: n=" << points_0.size() << " point pairs.\n";
-
     // --------------------- NORMALIZATION ----------------------------------------------------------------
 
     // Getting T, T', q, and q' using previously defined helper function
