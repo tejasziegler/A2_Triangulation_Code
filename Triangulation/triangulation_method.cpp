@@ -121,33 +121,46 @@ std::vector<Vector3D> triangulate(const std::vector<Vector2D>& points_0,
     return points;
 }
 
-double compute_reprojection_error(const Vector2D& p0, const Vector2D& p1,
-                                  const Vector3D& P3D,
-                                  const Matrix34& M0, const Matrix34& M1) {
-
-    // 1. Project the 3D point back into Camera 0
-    // Matrix multiplication: M0 (3x4) * P3D (4x1 homogeneous [x, y, z, 1]^T)
-    double p0_hat_x_homo = M0(0,0)*P3D.x() + M0(0,1)*P3D.y() + M0(0,2)*P3D.z() + M0(0,3);
-    double p0_hat_y_homo = M0(1,0)*P3D.x() + M0(1,1)*P3D.y() + M0(1,2)*P3D.z() + M0(1,3);
-    double p0_hat_w      = M0(2,0)*P3D.x() + M0(2,1)*P3D.y() + M0(2,2)*P3D.z() + M0(2,3);
-
-    // Divide by the homogeneous coordinate (depth) to get standard 2D pixel coordinates
-    Vector2D p0_hat(p0_hat_x_homo / p0_hat_w, p0_hat_y_homo / p0_hat_w);
-
-    // 2. Project the 3D point back into Camera 1
-    double p1_hat_x_homo = M1(0,0)*P3D.x() + M1(0,1)*P3D.y() + M1(0,2)*P3D.z() + M1(0,3);
-    double p1_hat_y_homo = M1(1,0)*P3D.x() + M1(1,1)*P3D.y() + M1(1,2)*P3D.z() + M1(1,3);
-    double p1_hat_w      = M1(2,0)*P3D.x() + M1(2,1)*P3D.y() + M1(2,2)*P3D.z() + M1(2,3);
-
-    Vector2D p1_hat(p1_hat_x_homo / p1_hat_w, p1_hat_y_homo / p1_hat_w);
-
-    // 3. Calculate Euclidean distance (pixel error) for both cameras
-    double err0 = std::pow(p0.x() - p0_hat.x(), 2) + std::pow(p0.y() - p0_hat.y(), 2);
-    double err1 = std::pow(p1.x() - p1_hat.x(), 2) + std::pow(p1.y() - p1_hat.y(), 2);
-
-    // 4. Return the average reprojection error for this specific pair
-    return (err0 + err1) / 2.0;
+Vector2D reproject(const Vector3D& P3D, const Matrix34& M) {
+    // Reprojection: M (3x4) * homogeneous point (4x1)
+    Vector3D p_hat = (M * P3D.homogeneous());
+    Vector2D p_cart = p_hat.cartesian();
+    return p_cart;
 }
+
+double reproj_error(const Vector2D& p, const Vector3D& P3D, const Matrix34& M) {
+    // Squared Euclidean distance in each image
+    double sq_error = (p - reproject(P3D, M)).length2();
+    return sqrt(sq_error); // returns RMSE!
+}
+
+// ==================================== LM OBJECTIVE ============================================
+
+/// Levenberg-Marquardt method for non-linear least squares:
+
+class ReprojectionObjective : public Objective_LM {
+public:
+    Matrix34 M0, M1;   /// projection matrices for camera 0 and camera 1
+    Vector2D p0, p1;   /// observed 2D points in each image
+
+    /// 4 residuals: (x,y) per camera
+    /// 3 variables: X, Y, Z
+    ReprojectionObjective() : Objective_LM(4, 3) {}
+
+    int evaluate(const double *x, double *fvec) {
+        Vector3D P3D(x[0], x[1], x[2]);
+
+        Vector2D res0 = reproject(P3D, M0) - p0;
+        Vector2D res1 = reproject(P3D, M1) - p1;
+
+        fvec[0] = res0.x();
+        fvec[1] = res0.y();
+        fvec[2] = res1.x();
+        fvec[3] = res1.y();
+
+        return 0;
+    }
+};
 
 
 // ================================= TRIANGULATION IMPLEMENTATION ======================================
@@ -314,6 +327,8 @@ bool Triangulation::triangulation(
     Matrix33 RA = Matrix33(U1 * W1 * V1.transpose());
     Matrix33 RB = Matrix33(U1 * W1.transpose() * V1.transpose());
 
+
+
     // Ensure RA and RB are valid rotation matrices (determinant must be +1)
     if (determinant(RA) < 0) {
         RA = RA * -1.0;
@@ -327,6 +342,7 @@ bool Triangulation::triangulation(
     Vector3D tB = -tA;
 
     std::cout << "[4/6] Essential matrix E and R/t candidates extracted.\n";
+
 
     // --------------------- TRIANGULATION -------------------------------------------------------------
 
@@ -378,38 +394,75 @@ bool Triangulation::triangulation(
     std::cout << "[6/6] Best: candidate " << best
           << " with " << best_count << " valid points.\n";
 
-        // Compute reprojection error
+    // Compute reprojection error
     Matrix34 M0_final = construct_M(K_0, R0, t0);
     Matrix34 M1_final = construct_M(K_1, R, t);
 
     double total_error = 0.0;
     for (size_t i = 0; i < points_3d.size(); ++i) {
-        total_error += compute_reprojection_error(points_0[i], points_1[i], points_3d[i], M0_final, M1_final);
+        total_error += reproj_error(points_0[i], points_3d[i], M0_final) + reproj_error(points_1[i], points_3d[i], M1_final);
+    }
+    double rmse = total_error / (2*points_3d.size());
+    // division by total number of 2D points
+    std::cout << "     Root Mean Squared Reprojection Error: " << rmse << " squared pixels\n";
+
+    // --------------------- LM DESCENT --------------------------------------------------
+
+    int refined = 0;
+
+    for (int i = 0; i < (int)points_3d.size(); i++) {
+
+        /// initialize the objective function
+        /// 1st argument is the number of functions, 2nd the number of variables
+        ReprojectionObjective obj;
+        obj.M0 = M0_final;
+        obj.M1 = M1_final;
+        obj.p0 = points_0[i];
+        obj.p1 = points_1[i];
+
+        /// create an instance of the Levenberg-Marquardt (LM for short) optimizer
+        Optimizer_LM lm;
+
+        Optimizer_LM::Parameters params;
+        params.ftol    = 1e-10;
+        params.xtol    = 1e-10;
+        params.gtol    = 1e-10;
+        params.maxcall = 1000;
+        params.epsilon = 1e-8;
+
+        /// initialize the variables from the linear triangulation result
+        std::vector<double> x = { points_3d[i].x(),
+                                   points_3d[i].y(),
+                                   points_3d[i].z() };
+
+        /// optimize (i.e., minimizing the reprojection error)
+        bool status = lm.optimize(&obj, x, &params);
+
+        /// retrieve the refined result
+        if (status) {
+            points_3d[i] = Vector3D(x[0], x[1], x[2]);
+            refined++;
+        }
     }
 
-    double mean_squared_error = total_error / points_3d.size();
-    std::cout << "      Mean Squared Reprojection Error: " << mean_squared_error << " squared pixels\n";
-    
-        // TODO: Estimate relative pose of two views. This can be subdivided into
-        //      - estimate the fundamental matrix F;
-        //      - compute the essential matrix E;
-        //      - recover rotation R and t.
+    std::cout << "      LM refinement: " << refined << " / "
+              << points_3d.size() << " points refined.\n";
 
-        // TODO: Reconstruct 3D points. The main task is
-        //      - triangulate a pair of image points (i.e., compute the 3D coordinates for each corresponding point pair)
+    // Recompute MSE after refinement
+    double total_error_refined = 0.0;
+    for (size_t i = 0; i < points_3d.size(); ++i) {
+        total_error_refined += reproj_error(points_0[i], points_3d[i], M0_final)
+                             + reproj_error(points_1[i], points_3d[i], M1_final);
+    }
+    std::cout << "      RMSE after LM: "
+              << total_error_refined / (2 * points_3d.size()) << " squared pixels\n";
+    // division by total number of 2D points
 
-        // TODO: Don't forget to
-        //          - write your recovered 3D points into 'points_3d' (so the viewer can visualize the 3D points for you);
-        //          - write the recovered relative pose into R and t (the view will be updated as seen from the 2nd camera,
-        //            which can help you check if R and t are correct).
-        //       You must return either 'true' or 'false' to indicate whether the triangulation was successful (so the
-        //       viewer will be notified to visualize the 3D points and update the view).
-        //       There are a few cases you should return 'false' instead, for example:
-        //          - function not implemented yet;
-        //          - input not valid (e.g., not enough points, point numbers don't match);
-        //          - encountered failure in any step.
     return points_3d.size() > 0;
     }
 
-
+ // TODO: There are a few cases you should return 'false' instead, for example:
+        //          - function not implemented yet;
+        //          - input not valid (e.g., not enough points, point numbers don't match);
+        //          - encountered failure in any step.
 
