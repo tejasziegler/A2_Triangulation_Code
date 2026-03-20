@@ -121,6 +121,35 @@ std::vector<Vector3D> triangulate(const std::vector<Vector2D>& points_0,
     return points;
 }
 
+double compute_reprojection_error(const Vector2D& p0, const Vector2D& p1,
+                                  const Vector3D& P3D,
+                                  const Matrix34& M0, const Matrix34& M1) {
+
+    // 1. Project the 3D point back into Camera 0
+    // Matrix multiplication: M0 (3x4) * P3D (4x1 homogeneous [x, y, z, 1]^T)
+    double p0_hat_x_homo = M0(0,0)*P3D.x() + M0(0,1)*P3D.y() + M0(0,2)*P3D.z() + M0(0,3);
+    double p0_hat_y_homo = M0(1,0)*P3D.x() + M0(1,1)*P3D.y() + M0(1,2)*P3D.z() + M0(1,3);
+    double p0_hat_w      = M0(2,0)*P3D.x() + M0(2,1)*P3D.y() + M0(2,2)*P3D.z() + M0(2,3);
+
+    // Divide by the homogeneous coordinate (depth) to get standard 2D pixel coordinates
+    Vector2D p0_hat(p0_hat_x_homo / p0_hat_w, p0_hat_y_homo / p0_hat_w);
+
+    // 2. Project the 3D point back into Camera 1
+    double p1_hat_x_homo = M1(0,0)*P3D.x() + M1(0,1)*P3D.y() + M1(0,2)*P3D.z() + M1(0,3);
+    double p1_hat_y_homo = M1(1,0)*P3D.x() + M1(1,1)*P3D.y() + M1(1,2)*P3D.z() + M1(1,3);
+    double p1_hat_w      = M1(2,0)*P3D.x() + M1(2,1)*P3D.y() + M1(2,2)*P3D.z() + M1(2,3);
+
+    Vector2D p1_hat(p1_hat_x_homo / p1_hat_w, p1_hat_y_homo / p1_hat_w);
+
+    // 3. Calculate Euclidean distance (pixel error) for both cameras
+    double err0 = std::pow(p0.x() - p0_hat.x(), 2) + std::pow(p0.y() - p0_hat.y(), 2);
+    double err1 = std::pow(p1.x() - p1_hat.x(), 2) + std::pow(p1.y() - p1_hat.y(), 2);
+
+    // 4. Return the average reprojection error for this specific pair
+    return (err0 + err1) / 2.0;
+}
+
+
 // ================================= TRIANGULATION IMPLEMENTATION ======================================
 
 bool Triangulation::triangulation(
@@ -349,7 +378,18 @@ bool Triangulation::triangulation(
     std::cout << "[6/6] Best: candidate " << best
           << " with " << best_count << " valid points.\n";
 
+        // Compute reprojection error
+    Matrix34 M0_final = construct_M(K_0, R0, t0);
+    Matrix34 M1_final = construct_M(K_1, R, t);
 
+    double total_error = 0.0;
+    for (size_t i = 0; i < points_3d.size(); ++i) {
+        total_error += compute_reprojection_error(points_0[i], points_1[i], points_3d[i], M0_final, M1_final);
+    }
+
+    double mean_error = total_error / points_3d.size();
+    std::cout << "      Mean Reprojection Error: " << mean_error << " pixels\n";
+    
         // TODO: Estimate relative pose of two views. This can be subdivided into
         //      - estimate the fundamental matrix F;
         //      - compute the essential matrix E;
