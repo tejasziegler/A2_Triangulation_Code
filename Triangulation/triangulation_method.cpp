@@ -393,7 +393,7 @@ bool Triangulation::triangulation(
     // division by total number of 2D points
     std::cout << "     Root Mean Squared Reprojection Error: " << rmse << " squared pixels\n";
 
-    // --------------------- LM DESCENT --------------------------------------------------
+    // --------------------- LM IMPROVEMENT --------------------------------------------------
 
     int refined = 0;
 
@@ -447,9 +447,4 @@ bool Triangulation::triangulation(
 
     return points_3d.size() > 0;
     }
-
- // TODO: There are a few cases you should return 'false' instead, for example:
-        //          - function not implemented yet;
-        //          - input not valid (e.g., not enough points, point numbers don't match);
-        //          - encountered failure in any step.
 
