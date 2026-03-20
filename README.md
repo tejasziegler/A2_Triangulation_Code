@@ -1,6 +1,6 @@
-## Assignment 02 - Triangulation
+## Assignment 02 - Triangulation <br>
 
-## Group members
+Group members<br>
 
 Emil Holub - 6550940
 Jaime Vergara - 6462421
