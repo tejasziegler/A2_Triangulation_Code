@@ -387,8 +387,8 @@ bool Triangulation::triangulation(
         total_error += compute_reprojection_error(points_0[i], points_1[i], points_3d[i], M0_final, M1_final);
     }
 
-    double mean_error = total_error / points_3d.size();
-    std::cout << "      Mean Reprojection Error: " << mean_error << " pixels\n";
+    double mean_squared_error = total_error / points_3d.size();
+    std::cout << "      Mean Squared Reprojection Error: " << mean_squared_error << " squared pixels\n";
     
         // TODO: Estimate relative pose of two views. This can be subdivided into
         //      - estimate the fundamental matrix F;
